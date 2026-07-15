@@ -49,7 +49,7 @@
 ├── requirements.txt
 ├── .env.example
 ├── .gitignore
-└── outputs/
+└── outputs/        # 실행 시 자동 생성되는 결과 파일 저장 폴더
 ```
 
 - `app.py`: Streamlit 웹앱 화면과 실행 흐름을 연결합니다.
@@ -185,9 +185,3 @@ streamlit run app.py
 
 - RTZR Developers: https://developers.rtzr.ai/
 - RTZR Docs: https://developers.rtzr.ai/docs/
-
-## AI 코딩 에이전트 활용
-
-Codex를 사용해 API 호출 흐름 구현, 오류 수정, Streamlit 화면 구성, README 구조화에 활용했습니다.
-
-API 키 관리, 실제 실행, 결과 검증, 최종 커밋 관리는 직접 수행했습니다.
