@@ -96,6 +96,121 @@ STOPWORDS = {
     "방식",
 }
 
+EN_STOPWORDS = {
+    "a",
+    "an",
+    "the",
+    "and",
+    "or",
+    "but",
+    "if",
+    "then",
+    "that",
+    "this",
+    "these",
+    "those",
+    "is",
+    "are",
+    "was",
+    "were",
+    "be",
+    "been",
+    "being",
+    "to",
+    "of",
+    "in",
+    "on",
+    "at",
+    "for",
+    "from",
+    "by",
+    "with",
+    "about",
+    "as",
+    "into",
+    "over",
+    "under",
+    "it",
+    "its",
+    "they",
+    "them",
+    "their",
+    "we",
+    "our",
+    "you",
+    "your",
+    "i",
+    "my",
+    "he",
+    "she",
+    "his",
+    "her",
+    "will",
+    "would",
+    "can",
+    "could",
+    "should",
+    "may",
+    "might",
+    "must",
+    "do",
+    "does",
+    "did",
+    "done",
+    "have",
+    "has",
+    "had",
+    "not",
+    "no",
+    "yes",
+    "so",
+    "very",
+    "just",
+    "also",
+    "more",
+    "most",
+    "much",
+    "many",
+    "there",
+    "here",
+    "what",
+    "when",
+    "where",
+    "why",
+    "how",
+    "all",
+    "any",
+    "some",
+    "each",
+    "every",
+    "other",
+    "another",
+    "thing",
+    "things",
+    "one",
+    "two",
+    "first",
+    "second",
+    "third",
+}
+
+EN_STOP_PHRASES = {
+    "in the",
+    "of the",
+    "on the",
+    "to the",
+    "for the",
+    "at the",
+    "by the",
+    "with the",
+    "and the",
+    "that the",
+    "from the",
+    "this is",
+    "there is",
+    "there are",
+}
+
 FILLER_WORDS = (
     "음",
     "어",
@@ -140,9 +255,34 @@ IMPORTANT_EXPRESSION_PATTERN = re.compile(
     r"핵심|비교|관계|분류|관리|사용|통해|위해|때문|라고|란)"
 )
 
+EN_IMPORTANT_EXPRESSION_PATTERN = re.compile(
+    r"\b(decided|maintain|reaffirmed|recognize|inflation|price stability|employment|"
+    r"monetary policy|task force|review|framework|economic activity|unemployment|"
+    r"federal funds rate)\b",
+    re.IGNORECASE,
+)
+
 VAGUE_REFERENCE_PATTERN = re.compile(
     r"(^|\s)(그걸|이걸|저걸|그런|이런|저런|애들|뭐냐|왜 있냐면|같은 경우)(\s|은|는|이|가|을|를|$)"
 )
+
+
+def detect_language(text):
+    hangul_count = len(re.findall(r"[가-힣]", text))
+    english_count = len(re.findall(r"[A-Za-z]", text))
+    total = hangul_count + english_count
+
+    if total == 0:
+        return "mixed"
+
+    hangul_ratio = hangul_count / total
+    english_ratio = english_count / total
+
+    if hangul_ratio >= 0.55:
+        return "ko"
+    if english_ratio >= 0.55:
+        return "en"
+    return "mixed"
 
 
 def read_transcript(input_path="outputs/transcript.txt"):
@@ -164,7 +304,17 @@ def normalize_word(word):
     return word.strip()
 
 
-def tokenize_sentence(sentence):
+def tokenize_sentence(sentence, language=None):
+    language = language or detect_language(sentence)
+
+    if language == "en":
+        raw_tokens = re.findall(r"[A-Za-z]+", sentence.lower())
+        return [
+            token
+            for token in raw_tokens
+            if len(token) >= 3 and token not in EN_STOPWORDS and not token.isdigit()
+        ]
+
     raw_tokens = re.split(r"[\s,.;:!?()\[\]{}\"'“”‘’\-_/]+", sentence.lower())
     tokens = []
 
@@ -178,6 +328,8 @@ def tokenize_sentence(sentence):
             continue
         if token in STOPWORDS:
             continue
+        if language == "mixed" and token in EN_STOPWORDS:
+            continue
         if PARTICLE_PATTERN.fullmatch(token):
             continue
         if VERB_ENDING_PATTERN.search(token):
@@ -187,22 +339,25 @@ def tokenize_sentence(sentence):
     return tokens
 
 
-def tokenize_text(text):
+def tokenize_text(text, language=None):
+    language = language or detect_language(text)
     tokens = []
     for sentence in split_sentences(text):
-        tokens.extend(tokenize_sentence(sentence))
+        tokens.extend(tokenize_sentence(sentence, language))
     return tokens
 
 
-def clean_sentence(sentence):
+def clean_sentence(sentence, language=None):
+    language = language or detect_language(sentence)
     sentence = sentence.strip()
     sentence = re.sub(r"\s+", " ", sentence)
     original_length = len(sentence)
     filler_count = 0
 
-    for filler in FILLER_WORDS:
-        sentence, count = re.subn(rf"(^|\s){re.escape(filler)}(\s|,|\.|$)", " ", sentence)
-        filler_count += count
+    if language != "en":
+        for filler in FILLER_WORDS:
+            sentence, count = re.subn(rf"(^|\s){re.escape(filler)}(\s|,|\.|$)", " ", sentence)
+            filler_count += count
 
     sentence = re.sub(r"\s+", " ", sentence).strip(" ,.?!")
     if len(sentence) < 25:
@@ -210,7 +365,7 @@ def clean_sentence(sentence):
     if original_length and filler_count / max(len(sentence.split()), 1) > 0.18:
         return ""
 
-    tokens = tokenize_sentence(sentence)
+    tokens = tokenize_sentence(sentence, language)
     if len(tokens) < 4:
         return ""
 
@@ -222,13 +377,18 @@ def clean_sentence(sentence):
         return ""
     if unique_ratio < 0.5:
         return ""
-    if ENDING_FRAGMENT_PATTERN.search(sentence):
-        return ""
-    if not COMPLETE_ENDING_PATTERN.search(sentence):
-        return ""
-    if VAGUE_REFERENCE_PATTERN.search(sentence) and not IMPORTANT_EXPRESSION_PATTERN.search(sentence):
-        return ""
-    if sentence_quality_score(sentence, tokens) < 0:
+    if language == "en":
+        if re.search(r"\b(and|or|but|because|with|for|from|into|about|that|which)$", sentence, re.IGNORECASE):
+            return ""
+    else:
+        if ENDING_FRAGMENT_PATTERN.search(sentence):
+            return ""
+        if not COMPLETE_ENDING_PATTERN.search(sentence):
+            return ""
+        if VAGUE_REFERENCE_PATTERN.search(sentence) and not IMPORTANT_EXPRESSION_PATTERN.search(sentence):
+            return ""
+
+    if sentence_quality_score(sentence, tokens, language=language) < 0:
         return ""
 
     return sentence
@@ -252,14 +412,24 @@ def is_contained_keyword(candidate, selected_keyword):
     return False
 
 
+def ngram_has_stopword(ngram, language):
+    tokens = ngram.split()
+    if language == "en":
+        return any(token in EN_STOPWORDS for token in tokens) or ngram in EN_STOP_PHRASES
+    if language == "mixed":
+        return any(token in STOPWORDS or token in EN_STOPWORDS for token in tokens) or ngram in EN_STOP_PHRASES
+    return any(token in STOPWORDS for token in tokens)
+
+
 def extract_keywords(text, top_n=10):
+    language = detect_language(text)
     ngram_counts = Counter()
 
     for sentence in split_sentences(text):
-        tokens = tokenize_sentence(sentence)
+        tokens = tokenize_sentence(sentence, language)
         for n in NGRAM_WEIGHTS:
             for ngram in make_ngrams(tokens, n):
-                if any(token in STOPWORDS for token in ngram.split()):
+                if ngram_has_stopword(ngram, language):
                     continue
                 ngram_counts[ngram] += 1
 
@@ -267,10 +437,20 @@ def extract_keywords(text, top_n=10):
     for keyword, count in ngram_counts.items():
         tokens = keyword.split()
         n = len(tokens)
-        if n > 1 and count < 2:
+        if language != "en" and n > 1 and count < 2:
             continue
 
-        score = count * NGRAM_WEIGHTS[n]
+        if language == "en":
+            english_weights = {
+                1: 1.0,
+                2: 3.0,
+                3: 2.4,
+            }
+            score = count * english_weights[n]
+            if n > 1:
+                score += 2
+        else:
+            score = count * NGRAM_WEIGHTS[n]
         scored_candidates.append((score, n, count, keyword))
 
     scored_candidates.sort(key=lambda item: (-item[0], -item[1], -item[2], item[3]))
@@ -297,8 +477,9 @@ def extract_keywords(text, top_n=10):
     return keywords
 
 
-def sentence_quality_score(sentence, sentence_words=None, keywords=None):
-    tokens = sentence_words or tokenize_sentence(sentence)
+def sentence_quality_score(sentence, sentence_words=None, keywords=None, language=None):
+    language = language or detect_language(sentence)
+    tokens = sentence_words or tokenize_sentence(sentence, language)
     if not tokens:
         return -20
 
@@ -308,9 +489,18 @@ def sentence_quality_score(sentence, sentence_words=None, keywords=None):
     repeated_ratio = token_counts.most_common(1)[0][1] / token_count
     numeric_token_ratio = sum(1 for token in tokens if re.search(r"\d", token)) / token_count
     hangul_chars = len(re.findall(r"[가-힣]", sentence))
+    english_chars = len(re.findall(r"[A-Za-z]", sentence))
     visible_chars = len(re.findall(r"\S", sentence))
     hangul_ratio = hangul_chars / max(visible_chars, 1)
-    filler_count = sum(len(re.findall(rf"(^|\s){re.escape(filler)}(\s|$)", sentence)) for filler in FILLER_WORDS)
+    english_ratio = english_chars / max(visible_chars, 1)
+    filler_count = 0
+    if language != "en":
+        filler_count = sum(len(re.findall(rf"(^|\s){re.escape(filler)}(\s|$)", sentence)) for filler in FILLER_WORDS)
+    stopword_source = EN_STOPWORDS if language == "en" else STOPWORDS
+    if language == "mixed":
+        stopword_source = STOPWORDS | EN_STOPWORDS
+    raw_words = re.findall(r"[A-Za-z가-힣]+", sentence.lower())
+    stopword_ratio = sum(1 for word in raw_words if word in stopword_source) / max(len(raw_words), 1)
 
     score = 0
     if token_count < 4:
@@ -340,17 +530,25 @@ def sentence_quality_score(sentence, sentence_words=None, keywords=None):
         score -= 12
     if numeric_token_ratio > 0.1:
         score -= 10
-    if hangul_ratio < 0.7:
+    if language == "en" and english_ratio < 0.55:
         score -= 8
+    elif language == "ko" and hangul_ratio < 0.7:
+        score -= 8
+    if stopword_ratio > 0.45:
+        score -= 10
     if filler_count >= 2:
         score -= 6
-    if VAGUE_REFERENCE_PATTERN.search(sentence):
+    if language != "en" and VAGUE_REFERENCE_PATTERN.search(sentence):
         score -= 10
-    if ENDING_FRAGMENT_PATTERN.search(sentence):
+    if language != "en" and ENDING_FRAGMENT_PATTERN.search(sentence):
         score -= 14
-    if not re.search(r"[.!?。！？다요음임]$", sentence):
+    if language == "en" and not re.search(r"[.!?]$", sentence):
+        score -= 4
+    elif language != "en" and not re.search(r"[.!?。！？다요음임]$", sentence):
         score -= 6
-    if IMPORTANT_EXPRESSION_PATTERN.search(sentence):
+    if language == "en" and EN_IMPORTANT_EXPRESSION_PATTERN.search(sentence):
+        score += 10
+    elif language != "en" and IMPORTANT_EXPRESSION_PATTERN.search(sentence):
         score += 8
 
     if keywords:
@@ -365,13 +563,14 @@ def sentence_quality_score(sentence, sentence_words=None, keywords=None):
     return score
 
 
-def is_similar_sentence(sentence, selected_sentences):
-    sentence_words = set(tokenize_sentence(sentence))
+def is_similar_sentence(sentence, selected_sentences, language=None):
+    language = language or detect_language(sentence)
+    sentence_words = set(tokenize_sentence(sentence, language))
     if not sentence_words:
         return True
 
     for selected_sentence in selected_sentences:
-        selected_words = set(tokenize_sentence(selected_sentence))
+        selected_words = set(tokenize_sentence(selected_sentence, language))
         if not selected_words:
             continue
 
@@ -383,19 +582,27 @@ def is_similar_sentence(sentence, selected_sentences):
     return False
 
 
-def polish_summary_sentence(sentence):
-    sentence = clean_sentence(sentence)
+def polish_summary_sentence(sentence, language=None):
+    language = language or detect_language(sentence)
+    sentence = clean_sentence(sentence, language)
     if not sentence:
         return ""
 
     sentence = re.sub(r"\s+", " ", sentence).strip(" ,.")
     if len(sentence) > 160:
         sentence = sentence[:160].rsplit(" ", 1)[0].strip(" ,.")
-        if len(sentence) < 40 or ENDING_FRAGMENT_PATTERN.search(sentence):
+        if len(sentence) < 40:
+            return ""
+        if language != "en" and ENDING_FRAGMENT_PATTERN.search(sentence):
+            return ""
+        if language == "en" and re.search(r"\b(and|or|but|because|with|for|from|into|about|that|which)$", sentence, re.IGNORECASE):
             return ""
 
     if sentence.endswith(("...", ".", "!", "?")):
         return f"- {sentence}"
+
+    if language == "en":
+        return f"- {sentence}."
 
     if sentence.endswith(("다", "요", "음", "임")):
         return f"- {sentence}."
@@ -405,18 +612,19 @@ def polish_summary_sentence(sentence):
 
 def summarize_text(text, max_sentences=5):
     # 외부 LLM 없이 규칙 기반으로 전사문에서 핵심 문장을 추출하는 방식이다.
+    language = detect_language(text)
     candidates = []
     keyword_list = extract_keywords(text, top_n=20)
     keyword_set = set(keyword_list)
 
     for index, sentence in enumerate(split_sentences(text)):
-        cleaned_sentence = clean_sentence(sentence)
+        cleaned_sentence = clean_sentence(sentence, language)
         if not cleaned_sentence:
             continue
 
-        tokens = tokenize_sentence(cleaned_sentence)
+        tokens = tokenize_sentence(cleaned_sentence, language)
         token_set = set(tokens)
-        score = sentence_quality_score(cleaned_sentence, tokens, keyword_list)
+        score = sentence_quality_score(cleaned_sentence, tokens, keyword_list, language)
         if score < 18:
             continue
 
@@ -425,7 +633,7 @@ def summarize_text(text, max_sentences=5):
 
     selected_sentences = []
     for _, index, sentence in sorted(candidates, key=lambda item: item[0], reverse=True):
-        if is_similar_sentence(sentence, [item[1] for item in selected_sentences]):
+        if is_similar_sentence(sentence, [item[1] for item in selected_sentences], language):
             continue
 
         selected_sentences.append((index, sentence))
@@ -437,7 +645,7 @@ def summarize_text(text, max_sentences=5):
     bullets = []
     seen_bullets = set()
     for _, sentence in selected_sentences:
-        bullet = polish_summary_sentence(sentence)
+        bullet = polish_summary_sentence(sentence, language)
         if bullet and bullet not in seen_bullets:
             bullets.append(bullet)
             seen_bullets.add(bullet)
