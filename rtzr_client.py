@@ -52,6 +52,9 @@ def request_transcription(file_path, access_token):
         "Authorization": f"Bearer {access_token}",
     }
     config = {
+        "model_name": "whisper",
+        "language": "detect",
+        "language_candidates": ["ko", "en"],
         "use_diarization": True,
         "diarization": {
             "spk_count": 1,
@@ -59,7 +62,6 @@ def request_transcription(file_path, access_token):
         "use_itn": True,
         "use_disfluency_filter": True,
         "use_profanity_filter": False,
-        "use_punctuation": True,
     }
 
     with open(file_path, "rb") as audio_file:
