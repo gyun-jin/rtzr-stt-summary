@@ -76,8 +76,18 @@
 
 - `GET https://openapi.vito.ai/v1/transcribe/{transcribe_id}`
 - 전사 요청 후 발급받은 `transcribe_id`로 전사 완료 여부와 결과를 조회합니다.
-
 본 프로젝트는 영어/한국어 오디오 처리를 위해 전사 요청 `config`에 언어 자동 감지 설정을 사용합니다. 실제 API 키는 코드에 직접 작성하지 않고 `.env`에서 불러옵니다.
+
+전사 요청에 사용한 주요 `config` 옵션은 아래와 같습니다.
+
+- `model_name`: `whisper` 모델 사용
+- `language`: 오디오 언어 자동 감지를 위해 `detect` 사용
+- `language_candidates`: 자동 감지 후보 언어를 `["ko", "en"]`으로 제한
+- `use_diarization`: 발화자 분리 사용
+- `diarization.spk_count`: 기본 테스트 기준 발화자 수 1명으로 설정
+- `use_itn`: 숫자, 시간 등 표현 정규화 사용
+- `use_disfluency_filter`: 간투어 필터링 사용
+- `use_profanity_filter`: 비속어 필터링 미사용
 
 ## RTZR API 처리 흐름
 
