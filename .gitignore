@@ -4,5 +4,4 @@ __pycache__/
 *.pyc
 .DS_Store
 outputs/
-test_audio.*
 report.md
